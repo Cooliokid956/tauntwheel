@@ -66,6 +66,7 @@ end
 --- @field public name      string
 --- @field public shortName string
 --- @field public func      function
+--- @field public id        integer
 
 --- @class Sprite
 --- @field public label string
@@ -152,7 +153,8 @@ local function register_taunt(name, func)
     table.insert(tauntPool, {
         name = name,
         shortName = string_space_to_underscore(name),
-        func = func
+        func = func,
+        id = #tauntPool + 1
     })
     return tauntPool[-1]
 end
@@ -280,13 +282,14 @@ local function unit()
     return math.min(djui_hud_get_screen_width(),djui_hud_get_screen_height())
 end
 
+---@type Sprite[]
 local sprites = {}
 
--- -------- Loadout Storage -------- --
-local loadoutLen = mod_storage_load_number("loadout_len")
 ---@type Taunt[]
 local loadout = {}
+local loadoutLen = mod_storage_load_number("loadout_len")
 
+-- -------- Loadout Storage -------- --
 local function save_loadout()
     mod_storage_save_number("loadout_len", loadoutLen)
     for i = 1, loadoutLen do
@@ -303,7 +306,6 @@ hook_event(HOOK_ON_MODS_LOADED, function ()
         end
     else
         -- load defaults
-        djui_chat_message_create("loading defs..")
         loadoutLen = 8
         for i = 1, loadoutLen do
             djui_chat_message_create("taunt "..i..": "..tauntPool[i].name)
@@ -311,25 +313,17 @@ hook_event(HOOK_ON_MODS_LOADED, function ()
         end
         save_loadout()
     end
-
-    --printloadout
-    for i = 1, loadoutLen do
-        djui_chat_message_create("taunt "..i..": "..loadout[i].name)
-    end
 end)
 
--- ! will create sprites on wheel open, no pregen
--- for i, name in ipairs(loadout) do
---     table.insert(sprites, Sprite(name))
--- end
+local bind = U_JPAD
 
 function checkwheel(m)
-if m.playerIndex ~= 0 then return end
-    if wheelState == 0 and m.controller.buttonDown & U_JPAD ~= 0 and m.action & ACT_FLAG_IDLE ~= 0 then
+    if m.playerIndex ~= 0 then return end
+    if wheelState == 0 and m.controller.buttonDown & bind ~= 0 and m.action & ACT_FLAG_IDLE ~= 0 then
         wheelState = 1
     elseif wheelState == 1 then
         wheelState = 2
-    elseif wheelState == 2 and (m.controller.buttonDown & U_JPAD == 0 or m.action & ACT_FLAG_IDLE == 0) then
+    elseif wheelState == 2 and (m.controller.buttonDown & bind == 0 or m.action & ACT_FLAG_IDLE == 0) then
         wheelState = 3
     elseif wheelState == 3 then
         wheelState = 4
@@ -361,7 +355,9 @@ function renderwheel()
     local m = gMarioStates[0]
 
     if wheelState == 1 then
-        for i, sprite in ipairs(sprites) do
+        for i, taunt in ipairs(loadout) do
+            local sprite = Sprite(taunt.name)
+            table.insert(sprites, sprite)
             sprite.x  = w/2
             sprite.y  = h/2
             sprite.z  = 0.00000001
@@ -399,7 +395,7 @@ function renderwheel()
         end
         if selectedTaunt then
             if m.action == ACT_IDLE or m.action == ACT_TAUNT then
-                set_mario_action(m, ACT_TAUNT, selectedTaunt)
+                set_mario_action(m, ACT_TAUNT, get_taunt_from_name(sprites[selectedTaunt].label).id)
             end
         elseif m.action == ACT_TAUNT then
             set_mario_action(m, ACT_IDLE, 0)
@@ -418,7 +414,7 @@ function renderwheel()
         local done = true
         render_text_centered("Taunts", w/2, h*0.93, unit()/700)
 
-        for i, sprite in ipairs(sprites) do
+        for _, sprite in ipairs(sprites) do
             if sprite.z + sprite.zv > 0 then
                 done = false
                 sprite.x = sprite.x + sprite.xv
@@ -429,6 +425,7 @@ function renderwheel()
         end
         if done then
             wheelState = 0
+            sprites = {}
             save_loadout()
         end
     end

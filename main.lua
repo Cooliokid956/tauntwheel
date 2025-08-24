@@ -3,6 +3,9 @@
 
 --[[
     TODO:
+    taunt list
+
+    DONE:
     get sprite space rendering working
       - swap space
       - queued rendering
@@ -51,7 +54,27 @@ end
 --- @return SpriteSpace
 local function SpriteSpace() return { x = 0, y = 0, sprites = {} } end
 
+--- @param sprite Sprite
+--- @param space SpriteSpace
+local function transfer_to_sprite_space(sprite, space)
+    local prevSpace = sprite.space
+    if prevSpace then
+        prevSpace = prevSpace.sprites
+        for i, same in ipairs(prevSpace) do
+            if sprite == same then
+                table.remove(prevSpace, i)
+                sprite.space = nil
+            end
+        end
+        sprite.x, sprite.y = sprite.x + prevSpace.x, sprite.y + prevSpace.y
+    end
+    table.insert(space.sprites, sprite)
+    sprite.space = space
+    sprite.x, sprite.y = sprite.x - space.x, sprite.y - space.y
+end
+
 --- @class Sprite
+--- @field public space SpriteSpace
 --- @field public label string
 --- @field public x  number
 --- @field public y  number
@@ -61,13 +84,65 @@ local function SpriteSpace() return { x = 0, y = 0, sprites = {} } end
 --- @field public zv number
 
 --- @param label string|TextureInfo
+--- @param x number?
+--- @param y number?
+--- @param z number?
 --- @return Sprite
-local function Sprite(label)
+local function Sprite(label, x, y, z)
     return {
         label = label,
-        x  = 0, y  = 0, z  = 0,
-        xv = 0, yv = 0, zv = 0
+        x  = x or 0, y  = y or 0, z  = z or 0,
+        xv =      0, yv =      0, zv =      0
     }
+end
+
+local spriteQueue = {}
+
+--- @param space SpriteSpace
+local function queue_sprite_space(space)
+    for _, sprite in ipairs(space.sprites) do
+        table.insert(spriteQueue, sprite)
+    end
+end
+
+--- @param sprite Sprite
+local function queue_sprite(sprite)
+    table.insert(spriteQueue, sprite)
+end
+
+local function render_text_centered(t, x, y, z)
+    djui_hud_print_text(t, x - djui_hud_measure_text(t) * z/2,  y - 32*z, z)
+end
+
+local function render_text_centered_interpolated(t, px, py, pz, x, y, z)
+    djui_hud_print_text_interpolated(t, px - djui_hud_measure_text(t) * pz/2, py - 32*pz, pz,
+                                         x - djui_hud_measure_text(t) *  z/2,  y - 32* z,  z)
+end
+
+--- @param s Sprite
+function render_sprite_label(s)
+    if not s then return end
+    render_text_centered_interpolated(s.label, s.x - s.xv, s.y - s.yv, s.z - s.zv,
+                                               s.x,        s.y,        s.z       )
+end
+
+local function render_sprite(sprite)
+    local space = sprite.space
+    if space then sprite.x, sprite.y = sprite.x + space.x, sprite.y + space.y end
+    local t = type(sprite.label)
+    if t == "string" then
+        render_sprite_label(sprite)
+    -- elseif t == "userdata" then
+    --     render_sprite_texture(sprite)
+    end
+    if space then sprite.x, sprite.y = sprite.x - space.x, sprite.y - space.y end
+end
+
+local function render_sprite_queue()
+    for i, sprite in ipairs(spriteQueue) do
+        render_sprite(sprite)
+    end
+    spriteQueue = {}
 end
 
 local STATE_IDLE  = 0
@@ -123,14 +198,6 @@ local function MenuSubState(init, loop)
         loop = loop
     }
 end
-
--- local function split(s)
---     local result = {}
---     for match in (s):gmatch(string.format("[^%s]+", ",")) do
---         table.insert(result, match)
---     end
---     return result
--- end
 
 local selectedTaunt
 local playerTaunts = {}
@@ -233,7 +300,7 @@ TWApi.register_taunt = register_taunt
 --- @param m MarioState
 --- @return Taunt|false?
 local function get_current_taunt(m)
-    return m.action == ACT_TAUNT and tauntPool[playerTaunts[m.playerIndex]]
+    return m.action == ACT_TAUNT and playerTaunts[m.playerIndex]
 end
 TWApi.get_current_taunt = get_current_taunt
 
@@ -273,16 +340,15 @@ local function star_dance_update(m)
     local frame = ANIMFRAME(m.marioObj)
     local bodyState = m.marioBodyState
     if frame == 1 then
-        spawn_non_sync_object(id_bhvCelebrationStar, E_MODEL_STAR, 0,0,0, function (o)
+        spawn_non_sync_object(id_bhvCelebrationStar, E_MODEL_STAR, 0, 0, 0, function (o)
             o.parentObj = m.marioObj
         end)
     elseif frame == 42 then
         play_character_sound(m, CHAR_SOUND_HERE_WE_GO)
     end
 
-    if taunt.name == "Star Dance" and frame > 38 then
-        bodyState.handState = MARIO_HAND_PEACE_SIGN
-    elseif taunt.name == "Water Star Dance" and frame > 61 then
+    if (taunt.name ==       "Star Dance" and frame > 38)
+    or (taunt.name == "Water Star Dance" and frame > 61) then
         bodyState.handState = MARIO_HAND_PEACE_SIGN
     end
 end
@@ -308,8 +374,8 @@ register_taunt("Shock", ANIM_EXTRA(CHAR_ANIM_SHOCKED,
         play_sound(SOUND_MOVING_SHOCKED, m.marioObj.header.gfx.cameraToObject)
     end
 ))
-register_taunt("T-Pose", ANIM(CHAR_ANIM_TWIRL))
-register_taunt("Wave", ANIM_EXTRA(CHAR_ANIM_CREDITS_WAVING, HAND_STATE(MARIO_HAND_OPEN)))
+register_taunt("T-Pose", ANIM_EXTRA(CHAR_ANIM_TWIRL, HAND_STATE(MARIO_HAND_OPEN)))
+register_taunt("Wave", ANIM_EXTRA(CHAR_ANIM_CREDITS_WAVING, HAND_STATE(MARIO_HAND_RIGHT_OPEN)))
 register_taunt("Star Dance", ANIM_EXTRA(CHAR_ANIM_STAR_DANCE, star_dance_update))
 register_taunt("Water Star Dance", ANIM_EXTRA(CHAR_ANIM_WATER_STAR_DANCE, star_dance_update))
 register_taunt("Death", ANIM_EXTRA(CHAR_ANIM_DYING_FALL_OVER, death_update))
@@ -324,22 +390,6 @@ register_taunt("Death 2", ANIM_EXTRA(CHAR_ANIM_ELECTROCUTION, death_update))
 
 local function unit()
     return math.min(djui_hud_get_screen_width(),djui_hud_get_screen_height())
-end
-
-local function render_text_centered(t, x, y, z)
-    djui_hud_print_text(t, x - djui_hud_measure_text(t) * z/2,  y - 32*z, z)
-end
-
-local function render_text_centered_interpolated(t, px, py, pz, x, y, z)
-    djui_hud_print_text_interpolated(t, px - djui_hud_measure_text(t) * pz/2, py - 32*pz, pz,
-                                         x - djui_hud_measure_text(t) *  z/2,  y - 32* z,  z)
-end
-
---- @param s Sprite
-function rendertext(s)
-    if not s then return end
-    render_text_centered_interpolated(s.label, s.x - s.xv, s.y - s.yv, s.z - s.zv,
-                                               s.x,        s.y,        s.z       )
 end
 
 --- @type Taunt[]
@@ -364,123 +414,142 @@ hook_event(HOOK_ON_MODS_LOADED, function ()
     else
         -- load defaults
         loadoutLen = 8
-        for i = 1, loadoutLen do
-            print("taunt "..i..": "..tauntPool[i].name)
-            loadout[i] = tauntPool[i]
+        for i, taunt in pairs(tauntPool) do
+            print("taunt "..(#loadout+1)..": "..taunt.name)
+            table.insert(loadout, taunt)
         end
         save_loadout()
     end
 end)
 
 local c = gControllers[0] -- Find a better place
-
-local list = SpriteSpace()
-local listState = 0
+local wheelBind = U_JPAD
 local listBind = R_JPAD
+local wheelMenu
+local listMenu
 
 local wheel = SpriteSpace()
-local wheelState = 0
-local wheelBind = U_JPAD
-
--- List
-local function check_list(m)
-    if listState == 0 and m.controller.buttonDown & listBind ~= 0 and wheelState == 2 then
-        listState = 1
-    elseif listState == 1 then
-        listState = 2
-    elseif listState == 2 and (m.controller.buttonDown & listBind == 0 or m.action & ACT_FLAG_IDLE == 0) then
-        listState = 3
-    elseif listState == 3 then
-        listState = 4
+wheelMenu = MenuState(
+    MenuSubState(
+        function ()
+            for i, taunt in ipairs(loadout) do
+                local sprite = Sprite(taunt.name)
+                transfer_to_sprite_space(sprite, wheel)
+                sprite.x  = 0
+                sprite.y  = 0
+                sprite.z  = 0.00000001
+                sprite.xv = (math.sin(math.rad((i-1) * 360/#wheel.sprites + (math.random()*10))) - math.random()* 10) * unit()/50
+                sprite.yv = (math.cos(math.rad((i-1) * 360/#wheel.sprites + (math.random()*10))) - math.random()*-10) * unit()/50
+                sprite.zv = math.random()*6
+            end
+        end,
+        function ()
+            local tauntDist = unit()/7
+            selectedTaunt = nil
+            for i, sprite in ipairs(wheel.sprites) do
+                sprite.xv = (sprite.xv + (( unit()*0.3 * math.sin((i-1) * 2*math.pi/#wheel.sprites)) - sprite.x) * 0.3) * 0.8
+                sprite.yv = (sprite.yv + ((-unit()*0.3 * math.cos((i-1) * 2*math.pi/#wheel.sprites)) - sprite.y) * 0.3) * 0.8
+                if not selectedTaunt
+                and math.hypot((wheel.x + sprite.x - djui_hud_get_mouse_x()), (wheel.y + sprite.y - djui_hud_get_mouse_y())) <= tauntDist then
+                    selectedTaunt = get_taunt_from_name(sprite.label)
+                    sprite.xv = sprite.xv + (djui_hud_get_mouse_x() - sprite.x - wheel.x) * 0.02
+                    sprite.yv = sprite.yv + (djui_hud_get_mouse_y() - sprite.y - wheel.y) * 0.02
+                    sprite.zv = sprite.zv + unit()*0.001
+                end
+                sprite.zv = (sprite.zv + (unit()/800 - sprite.z) * 0.9) * 0.5
+            end
+            for i, sprite in ipairs(wheel.sprites) do
+                if math.hypot((sprite.x - (wheel.x + (c.extStickX/128 * unit()*0.3))), (sprite.y - (wheel.y - (c.extStickY/128 * unit()*0.3)))) <= tauntDist then
+                    selectedTaunt = get_taunt_from_name(sprite.label)
+                    sprite.zv = sprite.zv + unit()*0.001
+                end
+            end
+        end
+    ),
+    MenuSubState(
+        function ()
+            local m = gMarioStates[0]
+            for i, sprite in ipairs(wheel.sprites) do
+                sprite.xv = sprite.xv +(math.sin(math.rad((i-1) * 360/#wheel.sprites + math.random()*10-5))) * unit()/10
+                sprite.yv = sprite.yv -(math.cos(math.rad((i-1) * 360/#wheel.sprites + math.random()*10-5))) * unit()/10
+                sprite.zv = sprite.zv + math.random()
+            end
+            if selectedTaunt   then
+                if m.action == ACT_IDLE
+                or m.action == ACT_TAUNT then
+                    select_taunt(selectedTaunt)
+                    set_mario_action(m, ACT_TAUNT, 0)
+                end
+            elseif m.action == ACT_TAUNT then
+                set_mario_action(m, ACT_IDLE, 0)
+            end
+        end,
+        function ()
+            for _, sprite in ipairs(wheel.sprites) do
+                if sprite.z > 0 then
+                    sprite.xv,                   sprite.yv,                   sprite.zv =
+                    sprite.xv - sprite.x * 0.05, sprite.yv - sprite.y * 0.05, sprite.zv - sprite.z * 0.07
+                end
+            end
+        end
+    ),
+    function ()
+        return c.buttonDown & wheelBind == wheelBind and gMarioStates[0].action & ACT_FLAG_IDLE ~= 0
+    end,
+    function ()
+        return ((c.buttonDown & wheelBind == 0) or gMarioStates[0].action & ACT_FLAG_IDLE == 0) and listMenu.state ~= STATE_OPEN
     end
-end
+)
+
+
+local list = SpriteSpace()
+listMenu = MenuState(
+    MenuSubState(
+        function ()
+            
+        end,
+        function ()
+            
+        end
+    ),
+    MenuSubState(
+        function ()
+            
+        end,
+        function ()
+            
+        end
+    ),
+    function ()
+        return c.buttonPressed & listBind ~= 0 and wheelMenu.state == STATE_OPEN
+    end,
+    function ()
+        return c.buttonPressed & listBind ~= 0
+    end
+)
+-- List
 
 local function render_list()
-    
+    process_menu_state(listMenu)
+    if listMenu.state == STATE_CLOSE then
+        listMenu.state = STATE_IDLE
+    end
 end
 
 -- Wheel
-local function check_wheel(m)
-    if wheelState == 0 and m.controller.buttonDown & wheelBind == wheelBind and m.action & ACT_FLAG_IDLE ~= 0 then
-        wheelState = 1
-    elseif wheelState == 1 then
-        wheelState = 2
-    elseif wheelState == 2 and ((m.controller.buttonDown & wheelBind == 0) or m.action & ACT_FLAG_IDLE == 0) and not (listState == 1 or listState == 2) then
-        wheelState = 3
-    elseif wheelState == 3 then
-        wheelState = 4
-    end
-end
-
 local function render_wheel()
     djui_hud_set_resolution(RESOLUTION_DJUI)
     djui_hud_set_font(FONT_MENU)
     djui_hud_set_color(255, 255, 255, 255)
     local w = djui_hud_get_screen_width()
     local h = djui_hud_get_screen_height()
-    local tauntDist = unit()/7
-    local m = gMarioStates[0]
 
-    local cx = (listState == 1 or listState == 2) and (w - h/2) or w/2
+    local cx = (listMenu.state == STATE_OPEN) and (w - h/2) or w/2
     local cy = h/2
+    wheel.x, wheel.y = cx, cy
 
-    if wheelState == 1 then
-        for i, taunt in ipairs(loadout) do
-            local sprite = Sprite(taunt.name)
-            table.insert(wheel.sprites, sprite)
-            sprite.x  = cx
-            sprite.y  = cy
-            sprite.z  = 0.00000001
-            sprite.xv = (math.sin(math.rad((i-1) * 360/#wheel.sprites + (math.random()*10))) - math.random()* 10) * unit()/50
-            sprite.yv = (math.cos(math.rad((i-1) * 360/#wheel.sprites + (math.random()*10))) - math.random()*-10) * unit()/50
-            sprite.zv = math.random()*6
-        end
-    end
-    if wheelState == 1 or wheelState == 2 then
-        selectedTaunt = nil
-        for i, sprite in ipairs(wheel.sprites) do
-            sprite.xv = (sprite.xv + ((cx + unit()*0.3 * math.sin((i-1) * 2*math.pi/#wheel.sprites)) - sprite.x) * 0.3) * 0.8
-            sprite.yv = (sprite.yv + ((cy - unit()*0.3 * math.cos((i-1) * 2*math.pi/#wheel.sprites)) - sprite.y) * 0.3) * 0.8
-            if not selectedTaunt
-               and math.sqrt((sprite.x - djui_hud_get_mouse_x())^2 + (sprite.y - djui_hud_get_mouse_y())^2) <= tauntDist then
-                selectedTaunt = i
-                sprite.xv = sprite.xv + (djui_hud_get_mouse_x() - sprite.x) * 0.02
-                sprite.yv = sprite.yv + (djui_hud_get_mouse_y() - sprite.y) * 0.02
-                sprite.zv = sprite.zv + unit()*0.001
-            end
-            sprite.zv = (sprite.zv + (unit()/800 - sprite.z) * 0.9) * 0.5
-        end
-        for i, sprite in ipairs(wheel.sprites) do
-            if math.sqrt((sprite.x - (cx + (m.controller.extStickX/128 * unit()*0.3)))^2 + (sprite.y - (cy - (m.controller.extStickY/128 * unit()*0.3)))^2) <= tauntDist then
-                selectedTaunt = i
-                sprite.zv = sprite.zv + unit()*0.001
-            end
-        end
-    end
-    if wheelState == 3 then
-        for i, sprite in ipairs(wheel.sprites) do
-            sprite.xv = sprite.xv +(math.sin(math.rad((i-1) * 360/#wheel.sprites + math.random()*10-5))) * unit()/10
-            sprite.yv = sprite.yv -(math.cos(math.rad((i-1) * 360/#wheel.sprites + math.random()*10-5))) * unit()/10
-            sprite.zv = sprite.zv + math.random()
-        end
-        if selectedTaunt then
-            if m.action == ACT_IDLE
-            or m.action == ACT_TAUNT then
-                set_mario_action(m, ACT_TAUNT, 0)
-            end
-        elseif m.action == ACT_TAUNT then
-            set_mario_action(m, ACT_IDLE, 0)
-        end
-    end
-    if wheelState == 3 or wheelState == 4 then
-        for _, sprite in ipairs(wheel.sprites) do
-            if sprite.z > 0 then
-                sprite.xv,                          sprite.yv,                          sprite.zv =
-                sprite.xv + (cx - sprite.x) * 0.05, sprite.yv + (cy - sprite.y) * 0.05, sprite.zv - sprite.z * 0.07
-            end
-        end
-    end
-    if wheelState ~= 0 then
+    process_menu_state(wheelMenu)
+    if wheelMenu.state ~= STATE_IDLE then
         local done = true
         render_text_centered("Taunts", cx, h*0.93, unit()/700)
 
@@ -489,24 +558,20 @@ local function render_wheel()
                 done = false
                 sprite.x,             sprite.y,             sprite.z =
                 sprite.x + sprite.xv, sprite.y + sprite.yv, sprite.z + sprite.zv
-                rendertext(sprite)
+                queue_sprite(sprite)
             end
         end
         if done then
-            wheelState = 0
+            wheelMenu.state = STATE_IDLE
             wheel.sprites = {}
         end
     end
 end
 
-hook_event(HOOK_BEFORE_MARIO_UPDATE, function (m)
-    if m.playerIndex ~= 0 then return end
-    check_list(m)
-    check_wheel(m)
-end)
 hook_event(HOOK_ON_HUD_RENDER, function ()
     render_list()
     render_wheel()
+    render_sprite_queue()
 end)
 
 function act_taunt(m)

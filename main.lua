@@ -588,7 +588,7 @@ function select_taunt(taunt)
     playerTaunts[0] = taunt
 
     local i = globalIndex
-    local taunt = taunt and taunt.name or ""
+    taunt = taunt and taunt.name or ""
     network_send_bytestring(false,
         string.pack("<B", i)
      .. string.pack("z", taunt)

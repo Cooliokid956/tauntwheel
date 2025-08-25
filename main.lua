@@ -49,10 +49,33 @@ end
 --- @class SpriteSpace
 --- @field public x number
 --- @field public y number
+--- @field public xv number
+--- @field public yv number
 --- @field public sprites Sprite[]
 
 --- @return SpriteSpace
-local function SpriteSpace() return { x = 0, y = 0, sprites = {} } end
+local function SpriteSpace()
+    return {
+        x  = 0, y  = 0,
+        xv = 0, yv = 0,
+        sprites = {}
+    }
+end
+
+--- @param sprite Sprite
+local function get_sprite_global_pos(sprite)
+    local spaceX = sprite.space and sprite.space.x or 0
+    local spaceY = sprite.space and sprite.space.y or 0
+    return sprite.x + spaceX, sprite.y + spaceY
+end
+
+--- @param sprite Sprite
+--- @param space SpriteSpace
+local function get_sprite_pos_in_space(sprite, space)
+    local spaceX = sprite.space and sprite.space.x or 0
+    local spaceY = sprite.space and sprite.space.y or 0
+    return sprite.x + spaceX - space.x, sprite.y + spaceY - space.y
+end
 
 --- @param sprite Sprite
 --- @param space SpriteSpace
@@ -66,11 +89,10 @@ local function transfer_to_sprite_space(sprite, space)
                 sprite.space = nil
             end
         end
-        sprite.x, sprite.y = sprite.x + prevSpace.x, sprite.y + prevSpace.y
     end
+    sprite.x, sprite.y = get_sprite_pos_in_space(sprite, space)
     table.insert(space.sprites, sprite)
     sprite.space = space
-    sprite.x, sprite.y = sprite.x - space.x, sprite.y - space.y
 end
 
 --- @class Sprite

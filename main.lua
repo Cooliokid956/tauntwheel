@@ -5,6 +5,8 @@
     TODO:
     taunt list
 
+    [ground]/air/water taunts
+
     DONE:
     get sprite space rendering working
       - swap space
@@ -387,26 +389,20 @@ end
 register_taunt("Shock", ANIM_EXTRA(CHAR_ANIM_SHOCKED,
     function (m)
         m.marioBodyState.eyeState = math.random(8)
-        if m.marioObj.oTimer % 2 == 0 then
-            m.flags = m.flags | MARIO_METAL_SHOCK
-        else
-            m.flags = m.flags & ~MARIO_METAL_SHOCK
-        end
+        m.flags = (m.flags & ~MARIO_METAL_SHOCK) | MARIO_METAL_SHOCK * (m.marioObj.oTimer % 2)
 
         play_sound(SOUND_MOVING_SHOCKED, m.marioObj.header.gfx.cameraToObject)
     end
 ))
-register_taunt("T-Pose", ANIM_EXTRA(CHAR_ANIM_TWIRL, HAND_STATE(MARIO_HAND_OPEN)))
-register_taunt("Wave", ANIM_EXTRA(CHAR_ANIM_CREDITS_WAVING, HAND_STATE(MARIO_HAND_RIGHT_OPEN)))
-register_taunt("Star Dance", ANIM_EXTRA(CHAR_ANIM_STAR_DANCE, star_dance_update))
+register_taunt("T-Pose",           ANIM_EXTRA(CHAR_ANIM_TWIRL,            HAND_STATE(MARIO_HAND_OPEN)))
+register_taunt("Wave",             ANIM_EXTRA(CHAR_ANIM_CREDITS_WAVING,   HAND_STATE(MARIO_HAND_RIGHT_OPEN)))
+register_taunt("Star Dance",       ANIM_EXTRA(CHAR_ANIM_STAR_DANCE,       star_dance_update))
 register_taunt("Water Star Dance", ANIM_EXTRA(CHAR_ANIM_WATER_STAR_DANCE, star_dance_update))
-register_taunt("Death", ANIM_EXTRA(CHAR_ANIM_DYING_FALL_OVER, death_update))
-register_taunt("Stuck", LOOPING_ANIM_EXTRA(CHAR_ANIM_BOTTOM_STUCK_IN_GROUND, 127,
-    function (m)
-        if ANIMFRAME(m.marioObj) > 88 then m.marioBodyState.eyeState = MARIO_EYES_CLOSED end
-    end
+register_taunt("Death",            ANIM_EXTRA(CHAR_ANIM_DYING_FALL_OVER,  death_update))
+register_taunt("Death 2",          ANIM_EXTRA(CHAR_ANIM_ELECTROCUTION,    death_update))
+register_taunt("Stuck",    LOOPING_ANIM_EXTRA(CHAR_ANIM_BOTTOM_STUCK_IN_GROUND, 127,
+    function (m) if ANIMFRAME(m.marioObj) > 88 then m.marioBodyState.eyeState = MARIO_EYES_CLOSED end end
 ))
-register_taunt("Death 2", ANIM_EXTRA(CHAR_ANIM_ELECTROCUTION, death_update))
 
 --------------------------------------------------
 
@@ -528,18 +524,19 @@ local list = SpriteSpace()
 listMenu = MenuState(
     MenuSubState(
         function ()
+            -- Make this!!
             
         end,
         function ()
-            
+            -- Make this!!
         end
     ),
     MenuSubState(
         function ()
-            
+            -- Make this!!
         end,
         function ()
-            
+            -- Make this!!
         end
     ),
     function ()
@@ -549,8 +546,8 @@ listMenu = MenuState(
         return c.buttonPressed & listBind ~= 0
     end
 )
--- List
 
+-- List
 local function render_list()
     process_menu_state(listMenu)
     if listMenu.state == STATE_CLOSE then
@@ -600,7 +597,9 @@ function act_taunt(m)
     local taunt = get_current_taunt(m)
     if taunt then taunt.func(m) end
 
-    check_common_action_exits(m)
+    if check_common_idle_cancels(m) ~= 0 then return 1 end
+    stationary_ground_step(m)
+    return 0
 end
 hook_mario_action(ACT_TAUNT, act_taunt)
 
